@@ -1,0 +1,82 @@
+# Trabajo 4 - Francisco Delgado - Curso DevSecOps - Usach
+
+name: DevSecOps Pipeline - Pet Clinic
+
+on:
+  push:
+    branches:
+      - '**'   # se ejecuta en cada commit, en cualquier rama
+  workflow_dispatch:   # permite ejecutarlo manualmente desde la pestaña Actions
+
+jobs:
+  build-and-scan:
+    name: Build, SAST, SCA, Docker Build & Image Security
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. CLONACIÓN DEL REPOSITORIO
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # necesario para que SonarCloud calcule bien el análisis
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      # 2. SAST - SonarCloud
+      # Falla el pipeline si el Quality Gate detecta vulnerabilidades Critical/High/Medium.
+      - name: SAST - SonarCloud Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.organization=multi-x \
+            -Dsonar.projectKey=multi-x_pet-clinic \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.qualitygate.wait=true
+
+      # 3. SCA - OWASP Dependency-Check
+      # --failOnCVSS 4 hace fallar el pipeline ante severidad Medium (>=4.0), High o Critical.
+      - name: SCA - OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        id: depcheck
+        with:
+          project: 'pet-clinic'
+          path: '.'
+          format: 'HTML'
+          args: >
+            --failOnCVSS 4
+            --enableRetired
+
+      - name: Upload Dependency-Check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: ${{ github.workspace }}/reports
+
+      # 4. CONSTRUCCIÓN DE LA IMAGEN DOCKER
+      - name: Build Docker image
+        run: docker build -t pet-clinic:${{ github.sha }} .
+
+      # 5. IMAGE SECURITY - Trivy
+      # exit-code 1 detiene el pipeline si hay severidad CRITICAL, HIGH o MEDIUM.
+      - name: Image Security - Trivy Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'pet-clinic:${{ github.sha }}'
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '1'
+          ignore-unfixed: false
