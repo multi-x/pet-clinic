@@ -70,6 +70,12 @@ jobs:
           path: ${{ github.workspace }}/reports
 
       # 4. CONSTRUCCIÓN DE LA IMAGEN DOCKER
+      - name: Prepare JAR for Docker build
+        run: |
+          mvn -B package -DskipTests
+          JAR_FILE=$(find target -maxdepth 1 -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)
+          cp "$JAR_FILE" ./spring-petclinic-2.6.0.jar
+    
       - name: Build Docker image
         run: docker build -t pet-clinic:${{ github.sha }} .
 
