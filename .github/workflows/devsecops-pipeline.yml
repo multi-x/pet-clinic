@@ -72,7 +72,7 @@ jobs:
       # 4. CONSTRUCCIÓN DE LA IMAGEN DOCKER
       - name: Prepare JAR for Docker build
         run: |
-          mvn -B package -DskipTests
+          mvn -B package -DskipTests -Dcheckstyle.skip=true
           JAR_FILE=$(find target -maxdepth 1 -name '*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)
           cp "$JAR_FILE" ./spring-petclinic-2.6.0.jar
     
